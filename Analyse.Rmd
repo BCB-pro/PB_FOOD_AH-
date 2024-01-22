@@ -1,0 +1,769 @@
+---
+title: "Analyse"
+author: "Baptiste Crinière-Boizet"
+output:
+  html_document:
+    theme: united
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+<style>
+/* Notwendiges Zeug für Dropdowns */
+.tabset-dropdown > .nav-tabs {
+	display: inline-block;
+	max-height: 200px;
+	min-height: 44px;
+	overflow-y: auto;
+	background: white;
+	border: 1px solid #ddd;
+	border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs > li.active:before {
+    content: "";
+    font-family: 'Glyphicons Halflings';
+    display: inline-block;
+    padding: 10px;
+    border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li.active:before {
+	content: "&#xe258;";
+	border: none;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open:before {
+	content: "";
+    font-family: 'Glyphicons Halflings';
+    display: inline-block;
+    padding: 10px;
+    border-right: 1px solid #ddd;
+}
+
+
+.tabset-dropdown > .nav-tabs > li.active {
+	display: block;
+}
+
+.tabset-dropdown > .nav-tabs > li > a,
+.tabset-dropdown > .nav-tabs > li > a:focus,
+.tabset-dropdown > .nav-tabs > li > a:hover {
+	border: none;
+	display: inline-block;
+	border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li {
+	display: block;
+	float: none;
+}
+
+.tabset-dropdown > .nav-tabs > li {
+	display: none;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(fig.align = "center")
+knitr::opts_chunk$set(out.width="90%")
+```
+
+```{r}
+library(tidyverse)
+library(openxlsx)
+library(furniture)
+library(ggsci)
+library(lmerTest)
+library(emmeans)
+library(interactions)
+library(kableExtra)
+library(forcats)
+library(ggpubr)
+library(FactoMineR)
+library(factoextra)
+```
+
+```{r}
+# Importation des données
+data <- openxlsx::read.xlsx("/home/baptiste.criniere/Documents/PB_FOOD_AH/Data/Cleaned_Data_SM2.xlsx", na.strings = c("NA"))
+
+# Data management
+data1 <- data %>% 
+  dplyr::select(ID, FL_11_DO, VAS1_1, VAS2_1, VAS3_1, VAS4_1, VAS5_1) %>% 
+  tidyr::pivot_longer(cols = c("VAS1_1", "VAS2_1", "VAS3_1", "VAS4_1", "VAS5_1"), names_to = "Time", values_to = "Stress") %>% 
+  dplyr::mutate(Time = Time %>% 
+                  factor %>% 
+                  forcats::fct_recode("1" = "VAS1_1", "2" = "VAS2_1", "3" = "VAS3_1",
+                                      "4" = "VAS4_1", "5" = "VAS5_1"))
+```
+
+# Etude du stress
+
+```{r}
+data1 <- data %>% 
+  dplyr::select(ID, FL_11_DO, VAS1_1, VAS2_1, VAS3_1, VAS4_1, VAS5_1) %>% 
+  tidyr::pivot_longer(cols = c("VAS1_1", "VAS2_1", "VAS3_1", "VAS4_1", "VAS5_1"), names_to = "Time", values_to = "Stress") %>% 
+  dplyr::mutate(Time = Time %>% 
+                  factor %>% 
+                  forcats::fct_recode("1" = "VAS1_1", "2" = "VAS2_1", "3" = "VAS3_1",
+                                      "4" = "VAS4_1", "5" = "VAS5_1"))
+```
+
+## Description {.tabset}
+Dans cette première partie, nous décrivons la variable stress à chaque point dans le temps. Dans la section suivante, nous procéderons à de l'inférence statistique pour déterminer si ces différences sont dues uniquement à "l'effet du hasard".
+
+### Table 1
+Dans ce premier tableau, j'ai représenté la valeur moyenne du stress pour chaque groupe à chaque point dans le temps, accompagnée de l'écart-type entre parenthèses. \
+On constate que la moyenne du niveau de stress est plus élevée pour le groupe stressé à chaque point dans le temps, y compris au temps 1. De plus, on observe également que la variabilité du niveau de stress, représentée par l'écart type, est plus élevée pour le groupe stressé.
+```{r}
+tab <- data %>% 
+  furniture::table1("Stress Time 1" = VAS1_1, 
+                    "Stress Time 2" = VAS2_1,
+                    "Stress Time 3" = VAS3_1,
+                    "Stress Time 4" = VAS4_1,
+                    "Stress Time 5" = VAS5_1,
+                    splitby =~ FL_11_DO,
+                    na.rm = FALSE)
+knitr::kable(tab, caption = "") %>% 
+      kable_styling(bootstrap_options = c("striped", "hover")) %>% 
+    kable_paper()
+```
+
+### Figure 1
+Sur cette figure, on représente la densité de la variable stress à chaque condition et à chaque temps.
+```{r}
+data1 %>% 
+  ggplot(aes(x = Stress))+
+  geom_density(aes(fill = FL_11_DO), alpha = 0.5)+
+  facet_grid(FL_11_DO ~ Time)+
+  theme_classic()+
+  scale_fill_jama()+
+  theme(legend.position = "none")
+```
+
+### Figure 2
+Sur cette figure, nous représentons la variable stress à chaque point dans le temps à l'aide d'un boxplot. Les deux conditions (stress et contrôle) sont séparées. Les points correspondent au niveau de stress de chaque individu et sont reliés à dans le temps par une ligne.
+```{r}
+data1 %>% 
+  ggplot(aes(x = Time, y = Stress))+
+  geom_point(size = 0.3, alpha = 0.25)+
+  geom_boxplot(aes(fill = Time), outlier.shape = NA, alpha = 0.65)+
+  geom_line(aes(group = ID), alpha = 0.25, size = 0.25)+
+  facet_wrap(~FL_11_DO)+
+  theme_bw()+
+  scale_fill_jama()+
+  theme(legend.position = "none")
+```
+
+### Figure 3
+Cette dernière figure est la même que la précédente sans  les points et les lignes.
+```{r}
+data1 %>% 
+  ggplot(aes(x = Time, y = Stress))+
+  geom_boxplot(aes(fill = FL_11_DO), alpha = 0.5, outlier.shape = NA)+
+  theme_bw()+
+  scale_fill_jama()+
+  labs(fill = "Condition")
+```
+
+## Modélisation {.tabset}
+Dans cette section, nous cherchons à déterminer si les différences individuelles que nous observons avec les statistiques descriptives (médianes, moyennes, figures) sont généralisables. Pour ce faire, nous utiliserons un modèle mixte afin de tester l'effet du temps et de la condition (leur interaction) sur le score de stress.\
+L'équation du modèle est la suivante : Stress = Time*Condition + (1|ID) 
+
+### Test global
+Dans un premier temps, nous testons l'effet global de chaque variable. Les valeurs p associées à la significativité globale de chaque coefficient sont inférieures à 0.05, le seuil de significativité. Cela indique qu'il existe un effet du temps, de la condition et de leur interaction sur le score de stress.\
+*On peut lire la pvaleur associée au test de significativité de la variables dans la dernière colonne du tableau suivant*
+
+```{r}
+model <- lmerTest::lmer(Stress ~ Time*FL_11_DO + (1|ID), data = data1)
+# summary(model)
+anova(model)
+```
+
+### Comparaison des deux groupes à chaque point temps
+Dans cette partie, notre objectif est de comparer les deux groupes à chaque point dans le temps. Nous observons une seule différence significative entre les deux groupes, qui se produit au temps T2. À ce moment-là, le groupe "stressé" présente une valeur moyenne estimée du score de stress supérieure à 29,57 par rapport au groupe "contrôle" (p-value < 0,0001).
+```{r}
+emm <- emmeans(model, ~  FL_11_DO | Time)
+contrast(emm, interaction = c("pairwise"))
+```
+
+### Compararaison des temps pour chaque groupe
+Dans cette section, l'objectif est de comparer les valeurs du score de stress entre les différents moments temporels pour chaque groupe. J'ai effectué des comparaisons entre les niveaux de stress d'un temps par rapport au temps précédent.
+\
+Nous observons qu'il existe une différence significative pour le groupe contrôle au temps 4 par rapport aux temps 3 et 5.
+\
+De plus, nous constatons qu'il y a une différence significative à chaque point dans le temps pour le groupe "stressé".
+```{r}
+emm2 <- emmeans(model, ~ Time | FL_11_DO)
+contrasts <- list("T1 vs T2" = c(1, -1, 0, 0, 0),
+                  "T2 vs T3" = c(0, 1, -1, 0, 0),
+                  "T3 vs T4" = c(0, 0, 1, -1, 0),
+                  "T4 vs T5" = c(0, 0, 0, 1, -1))
+contrast(emm2, contrasts)
+```
+
+## Figure finale
+Voici la figure final qui représente la valeur marginale estimée du score de stress par condition et par temps avec un interval de confiance.
+```{r}
+interactions::cat_plot(model,
+                       pred = "Time",
+                       modx = "FL_11_DO",
+                       interval = TRUE,
+                       y.label = "Estimated Marginal Mean Stress Score",
+                       x.label = "Time",
+                       legend.main = "Condition:",
+                       modx.labels = c("Control", "Stress"),
+                       colors = c("gray40", "black"),
+                       point.shape = TRUE,
+                       pred.point.size = 5,
+                       dodge.width = .3,
+                       errorbar.width = .25,
+                       geom = "line") +
+  theme_bw() +
+  theme(legend.key.width = unit(2, "cm"),
+        legend.background = element_rect(color = "Black"),
+        legend.position = c(1, 0.72),
+        legend.justification = c(1.1, -0.1)) +
+  scale_y_continuous(breaks = seq(from = 0, to = 50, by = 10))+
+  labs(title = "Modelisation results")
+```
+
+# Etude ashamed
+Dans cette première partie, nous décrivons la variable ashamed à chaque point dans le temps. Dans la section suivante, nous procéderons à de l'inférence statistique pour déterminer si ces différences sont dues uniquement à "l'effet du hasard".
+
+## Description {.tabset}
+
+```{r}
+data1 <- data %>% 
+  dplyr::select(ID, FL_11_DO, VAS1_4, VAS2_4, VAS3_4, VAS4_4, VAS5_4) %>% 
+  tidyr::pivot_longer(cols = c("VAS1_4", "VAS2_4", "VAS3_4", "VAS4_4", "VAS5_4"), names_to = "Time", values_to = "Ashamed") %>% 
+  dplyr::mutate(Time = Time %>% 
+                  factor %>% 
+                  forcats::fct_recode("1" = "VAS1_4", "2" = "VAS2_4", "3" = "VAS3_4",
+                                      "4" = "VAS4_4", "5" = "VAS5_4"))
+```
+
+### Table 1
+Dans ce premier tableau, j’ai représenté la valeur moyenne ashamed pour chaque groupe à chaque point dans le temps, accompagnée de l’écart-type entre parenthèses.
+On constate que la moyenne de ashamed est plus élevée pour le groupe stressé au temps 1, 2, 3, 4 ; sauf au temps 5.
+
+```{r}
+tab <- data %>% 
+  furniture::table1("Ashamed Time 1" = VAS1_4, 
+                    "Ashamed Time 2" = VAS2_4,
+                    "Ashamed Time 3" = VAS3_4,
+                    "Ashamed Time 4" = VAS4_4,
+                    "Ashamed Time 5" = VAS5_4,
+                    splitby =~ FL_11_DO,
+                    na.rm = FALSE)
+knitr::kable(tab, caption = "") %>% 
+      kable_styling(bootstrap_options = c("striped", "hover")) %>% 
+    kable_paper()
+```
+
+### Figure 1
+Sur cette figure, nous représentons la variable ashamed à chaque point dans le temps à l’aide d’un boxplot. Les deux conditions (stress et contrôle) sont séparées. Les points correspondent au niveau de ashamed de chaque individu et sont reliés à dans le temps par une ligne.
+
+```{r}
+data1 %>% 
+  ggplot(aes(x = Time, y = Ashamed))+
+  geom_point(size = 0.3, alpha = 0.25)+
+  geom_boxplot(aes(fill = Time), outlier.shape = NA, alpha = 0.65)+
+  geom_line(aes(group = ID), alpha = 0.25, size = 0.25)+
+  facet_wrap(~FL_11_DO)+
+  theme_bw()+
+  scale_fill_jama()+
+  theme(legend.position = "none")
+```
+
+### Figure 2
+```{r}
+data1 %>% 
+  ggplot(aes(x = Time, y = Ashamed))+
+  geom_boxplot(aes(fill = FL_11_DO), alpha = 0.5, outlier.shape = NA)+
+  theme_bw()+
+  scale_fill_jama()+
+  labs(fill = "Condition")
+```
+
+
+## Modélisation {.tabset}
+L’équation du modèle est la suivante : Ashamed = Time*Condition + (1|ID)
+
+### Test global
+Dans un premier temps, nous testons l’effet global de chaque variable. Les valeurs p associées à la significativité globale du temps et de l'intéraction temps-condition sont inférieures à 0.05, le seuil de significativité. Cela indique qu’il existe un effet du temps, et de l'interaction sur la variable ashamed.
+
+```{r}
+model <- lmerTest::lmer(Ashamed ~ Time*FL_11_DO + (1|ID), data = data1)
+# summary(model)
+anova(model)
+```
+
+
+### Comparaison des deux groupes à chaque point temps
+Dans cette partie, notre objectif est de comparer les deux groupes à chaque point dans le temps. Nous observons une seule différence significative entre les deux groupes, qui se produit au temps T2 (p-value < 0,0001).
+
+```{r}
+emm <- emmeans(model, ~  FL_11_DO | Time)
+contrast(emm, interaction = c("pairwise"))
+```
+
+### Compararaison des temps pour chaque groupe
+Nous observons qu’il existe une différence significative pour le groupe contrôle au temps 4 par rapport aux temps 3.
+De plus, nous constatons qu’il y a une différence significative à chaque point dans le temps pour le groupe “stressé”.
+
+```{r}
+emm2 <- emmeans(model, ~ Time | FL_11_DO)
+contrasts <- list("T1 vs T2" = c(1, -1, 0, 0, 0),
+                  "T2 vs T3" = c(0, 1, -1, 0, 0),
+                  "T3 vs T4" = c(0, 0, 1, -1, 0),
+                  "T4 vs T5" = c(0, 0, 0, 1, -1))
+contrast(emm2, contrasts)
+```
+
+## Figure finale
+Voici la figure final qui représente la valeur marginale estimée de ashamed par condition et par temps avec un interval de confiance.
+```{r}
+interactions::cat_plot(model,
+                       pred = "Time",
+                       modx = "FL_11_DO",
+                       interval = TRUE,
+                       y.label = "Estimated Marginal Mean Ashamed Score",
+                       x.label = "Time",
+                       legend.main = "Condition:",
+                       modx.labels = c("Control", "Stress"),
+                       colors = c("gray40", "black"),
+                       point.shape = TRUE,
+                       pred.point.size = 5,
+                       dodge.width = .3,
+                       errorbar.width = .25,
+                       geom = "line") +
+  theme_bw() +
+  theme(legend.key.width = unit(2, "cm"),
+        legend.background = element_rect(color = "Black"),
+        legend.position = c(1, 0.72),
+        legend.justification = c(1.1, -0.1)) +
+  scale_y_continuous(breaks = seq(from = 0, to = 50, by = 10))+
+  labs(title = "Modelisation results")
+```
+
+# Etude de Threatened
+Nous décrivons la variable Threatened à chaque point dans le temps.
+
+## Description {.tabset}
+```{r}
+data1 <- data %>% 
+  dplyr::select(ID, FL_11_DO, VAS1_5, VAS2_5, VAS3_5, VAS4_5, VAS5_5) %>% 
+  tidyr::pivot_longer(cols = c("VAS1_5", "VAS2_5", "VAS3_5", "VAS4_5", "VAS5_5"), names_to = "Time", values_to = "Threatened") %>% 
+  dplyr::mutate(Time = Time %>% 
+                  factor %>% 
+                  forcats::fct_recode("1" = "VAS1_5", "2" = "VAS2_5", "3" = "VAS3_5",
+                                      "4" = "VAS4_5", "5" = "VAS5_5"))
+```
+
+### Table 1
+Dans ce premier tableau, j’ai représenté la valeur moyenne de Threatened pour chaque groupe à chaque point dans le temps, accompagnée de l’écart-type entre parenthèses.
+On constate que la moyenne de Threatened est plus élevée pour le groupe stressé à chaque point dans le temps, y compris au temps 1.
+
+```{r}
+tab <- data %>% 
+  furniture::table1("Threatened Time 1" = VAS1_5, 
+                    "Threatened Time 2" = VAS2_5,
+                    "Threatened Time 3" = VAS3_5,
+                    "Threatened Time 4" = VAS4_5,
+                    "Threatened Time 5" = VAS5_5,
+                    splitby =~ FL_11_DO,
+                    na.rm = FALSE)
+knitr::kable(tab, caption = "") %>% 
+      kable_styling(bootstrap_options = c("striped", "hover")) %>% 
+    kable_paper()
+```
+
+### Figure 1
+```{r}
+data1 %>% 
+  ggplot(aes(x = Time, y = Threatened))+
+  geom_point(size = 0.3, alpha = 0.25)+
+  geom_boxplot(aes(fill = Time), outlier.shape = NA, alpha = 0.65)+
+  geom_line(aes(group = ID), alpha = 0.25, size = 0.25)+
+  facet_wrap(~FL_11_DO)+
+  theme_bw()+
+  scale_fill_jama()+
+  theme(legend.position = "none")
+```
+
+### Figure 2
+```{r}
+data1 %>% 
+  ggplot(aes(x = Time, y = Threatened))+
+  geom_boxplot(aes(fill = FL_11_DO), alpha = 0.5, outlier.shape = NA)+
+  theme_bw()+
+  scale_fill_jama()+
+  labs(fill = "Condition")
+```
+
+
+## Modélisation {.tabset}
+L’équation du modèle est la suivante : Threatened = Time*Condition + (1|ID)
+
+
+### Test global
+Dans un premier temps, nous testons l’effet global de chaque variable. Les valeurs p associées à la significativité globale de chaque coefficient sont inférieures à 0.05, le seuil de significativité. Cela indique qu’il existe un effet du temps, de la condition et de leur interaction de Threatened.
+
+```{r}
+model <- lmerTest::lmer(Threatened ~ Time*FL_11_DO + (1|ID), data = data1)
+# summary(model)
+anova(model)
+```
+
+### Comparaison des deux groupes à chaque point temps
+Nous observons deux différences statistiquements signficatives entre les deux groupes qui se produit à T2 et T4.
+
+```{r}
+emm <- emmeans(model, ~  FL_11_DO | Time)
+contrast(emm, interaction = c("pairwise"))
+```
+
+### Compararaison des temps pour chaque groupe
+Pour le groupe des stressé, il existe deux différences significatives seulement entre le temps 1 et 2 ;  et le temps 2 et 3.
+
+```{r}
+emm2 <- emmeans(model, ~ Time | FL_11_DO)
+contrasts <- list("T1 vs T2" = c(1, -1, 0, 0, 0),
+                  "T2 vs T3" = c(0, 1, -1, 0, 0),
+                  "T3 vs T4" = c(0, 0, 1, -1, 0),
+                  "T4 vs T5" = c(0, 0, 0, 1, -1))
+contrast(emm2, contrasts)
+```
+
+## Figure finale
+Voici la figure final qui représente la valeur marginale estimée de Threatened par condition et par temps avec un interval de confiance.
+```{r}
+interactions::cat_plot(model,
+                       pred = "Time",
+                       modx = "FL_11_DO",
+                       interval = TRUE,
+                       y.label = "Estimated Marginal Mean Threatened Score",
+                       x.label = "Time",
+                       legend.main = "Condition:",
+                       modx.labels = c("Control", "Stress"),
+                       colors = c("gray40", "black"),
+                       point.shape = TRUE,
+                       pred.point.size = 5,
+                       dodge.width = .3,
+                       errorbar.width = .25,
+                       geom = "line") +
+  theme_bw() +
+  theme(legend.key.width = unit(2, "cm"),
+        legend.background = element_rect(color = "Black"),
+        legend.position = c(1, 0.72),
+        legend.justification = c(1.1, -0.1)) +
+  scale_y_continuous(breaks = seq(from = 0, to = 50, by = 10))+
+  labs(title = "Modelisation results")
+```
+
+# Etude de Self-secured
+Nous décrivons la variable Self-secured à chaque point dans le temps.
+
+
+## Description {.tabset}
+```{r}
+data1 <- data %>% 
+  dplyr::select(ID, FL_11_DO, VAS1_6, VAS2_6, VAS3_6, VAS4_6, VAS5_6) %>% 
+  tidyr::pivot_longer(cols = c("VAS1_6", "VAS2_6", "VAS3_6", "VAS4_6", "VAS5_6"), names_to = "Time", values_to = "Self_secured") %>% 
+  dplyr::mutate(Time = Time %>% 
+                  factor %>% 
+                  forcats::fct_recode("1" = "VAS1_6", "2" = "VAS2_6", "3" = "VAS3_6",
+                                      "4" = "VAS4_6", "5" = "VAS5_6"))
+```
+
+### Table 1
+Dans ce premier tableau, j’ai représenté la valeur moyenne de Self-secured pour chaque groupe à chaque point dans le temps, accompagnée de l’écart-type entre parenthèses. On constate que la moyenne de Self-secured est plus basse pour le groupe stressé à chaque point dans le temps, y compris au temps 1.
+
+```{r}
+tab <- data %>% 
+  furniture::table1("Self secured Time 1" = VAS1_6, 
+                    "Self secured Time 2" = VAS2_6,
+                    "Self secured Time 3" = VAS3_6,
+                    "Self secured Time 4" = VAS4_6,
+                    "Self secured Time 5" = VAS5_6,
+                    splitby =~ FL_11_DO,
+                    na.rm = FALSE)
+knitr::kable(tab, caption = "") %>% 
+      kable_styling(bootstrap_options = c("striped", "hover")) %>% 
+    kable_paper()
+```
+
+### Figure 1
+```{r}
+data1 %>% 
+  ggplot(aes(x = Time, y = Self_secured))+
+  geom_point(size = 0.3, alpha = 0.25)+
+  geom_boxplot(aes(fill = Time), outlier.shape = NA, alpha = 0.65)+
+  geom_line(aes(group = ID), alpha = 0.25, size = 0.25)+
+  facet_wrap(~FL_11_DO)+
+  theme_bw()+
+  scale_fill_jama()+
+  theme(legend.position = "none")
+```
+
+### Figure 2
+```{r}
+data1 %>% 
+  ggplot(aes(x = Time, y = Self_secured))+
+  geom_boxplot(aes(fill = FL_11_DO), alpha = 0.5, outlier.shape = NA)+
+  theme_bw()+
+  scale_fill_jama()+
+  labs(fill = "Condition")
+```
+
+
+## Modélisation {.tabset}
+L’équation du modèle est la suivante : Self-secured = Time*Condition + (1|ID)
+
+### Test global
+Dans un premier temps, nous testons l’effet global de chaque variable. Les valeurs p associées à la significativité globale de chaque coefficient sont inférieures à 0.05, le seuil de significativité. Cela indique qu’il existe un effet du temps, de la condition et de leur interaction de Self-secured.
+
+```{r}
+model <- lmerTest::lmer(Self_secured ~ Time*FL_11_DO + (1|ID), data = data1)
+# summary(model)
+anova(model)
+```
+
+### Comparaison des deux groupes à chaque point temps
+Nous observons deux différences statistiquements signficatives entre les deux groupes qui se produit à T2.
+
+```{r}
+emm <- emmeans(model, ~  FL_11_DO | Time)
+contrast(emm, interaction = c("pairwise"))
+```
+
+### Compararaison des temps pour chaque groupe
+Pour le groupe des stressé, il existe deux différences significatives à presque tous les temps sauf au temps 4 vs 5. Tandis que pour le groupe contrôle il existe un différence entre les temps 3 et 4.
+
+```{r}
+emm2 <- emmeans(model, ~ Time | FL_11_DO)
+contrasts <- list("T1 vs T2" = c(1, -1, 0, 0, 0),
+                  "T2 vs T3" = c(0, 1, -1, 0, 0),
+                  "T3 vs T4" = c(0, 0, 1, -1, 0),
+                  "T4 vs T5" = c(0, 0, 0, 1, -1))
+contrast(emm2, contrasts)
+```
+
+## Figure finale
+Voici la figure final qui représente la valeur marginale estimée de Self-secured par condition et par temps avec un interval de confiance.
+```{r}
+interactions::cat_plot(model,
+                       pred = "Time",
+                       modx = "FL_11_DO",
+                       interval = TRUE,
+                       y.label = "Estimated Marginal Mean Self-secure Score",
+                       x.label = "Time",
+                       legend.main = "Condition:",
+                       modx.labels = c("Control", "Stress"),
+                       colors = c("gray40", "black"),
+                       point.shape = TRUE,
+                       pred.point.size = 5,
+                       dodge.width = .3,
+                       errorbar.width = .25,
+                       geom = "line") +
+  theme_bw() +
+  theme(legend.key.width = unit(2, "cm"),
+        legend.background = element_rect(color = "Black"),
+        legend.position = c(1, 0.72),
+        legend.justification = c(1.1, -0.1)) +
+  scale_y_continuous(breaks = seq(from = 0, to = 50, by = 10))+
+  labs(title = "Modelisation results")
+```
+
+# Corrélation {.tabset .tabset-dropdown}
+
+J'ai regardé la corrélation à chaque temps entre les différentes variables
+
+## T1
+```{r}
+data1 <- data %>% 
+  dplyr::select(VAS1_1, VAS1_4, VAS1_5, VAS1_6) %>% 
+  dplyr::rename(Stress = VAS1_1,
+                Ashamed = VAS1_4,
+                Threatened = VAS1_5,
+                'Self secured' = VAS1_6,
+                )
+M <- cor(data1)
+corrplot::corrplot(M, type = "upper", order = "original", 
+         tl.col = "black", tl.srt = 45,  addCoef.col = "White")
+```
+
+
+## T2
+```{r}
+data1 <- data %>% 
+  dplyr::select(VAS2_1, VAS2_4, VAS2_5, VAS2_6) %>% 
+  dplyr::rename(Stress = VAS2_1,
+                Ashamed = VAS2_4,
+                Threatened = VAS2_5,
+                'Self secured' = VAS2_6,
+                )
+M <- cor(data1)
+corrplot::corrplot(M, type = "upper", order = "original", 
+         tl.col = "black", tl.srt = 45,  addCoef.col = "White")
+```
+
+
+## T3
+```{r}
+data1 <- data %>% 
+  dplyr::select(VAS3_1, VAS3_4, VAS3_5, VAS3_6) %>% 
+  dplyr::rename(Stress = VAS3_1,
+                Ashamed = VAS3_4,
+                Threatened = VAS3_5,
+                'Self secured' = VAS3_6,
+                ) %>% 
+  dplyr::filter(if_any(everything(), ~!is.na(.)))
+
+M <- cor(data1)
+corrplot::corrplot(M, type = "upper", order = "original", 
+         tl.col = "black", tl.srt = 45,  addCoef.col = "White")
+```
+
+
+## T4
+```{r}
+data1 <- data %>% 
+  dplyr::select(VAS4_1, VAS4_4, VAS4_5, VAS4_6) %>% 
+  dplyr::rename(Stress = VAS4_1,
+                Ashamed = VAS4_4,
+                Threatened = VAS4_5,
+                'Self secured' = VAS4_6,
+                ) %>% 
+  dplyr::filter(if_any(everything(), ~!is.na(.)))
+
+M <- cor(data1)
+corrplot::corrplot(M, type = "upper", order = "original", 
+         tl.col = "black", tl.srt = 45,  addCoef.col = "White")
+```
+
+## T5
+```{r}
+data1 <- data %>% 
+  dplyr::select(VAS5_1, VAS5_4, VAS5_5, VAS5_6) %>% 
+  dplyr::rename(Stress = VAS5_1,
+                Ashamed = VAS5_4,
+                Threatened = VAS5_5,
+                'Self secured' = VAS5_6,
+                ) %>% 
+  dplyr::filter(if_any(everything(), ~!is.na(.)))
+
+M <- cor(data1)
+corrplot::corrplot(M, type = "upper", order = "original", 
+         tl.col = "black", tl.srt = 45,  addCoef.col = "White")
+```
+
+# ACP : Analyse en composantes principales {.tabset}
+On observe que globalement pour chaque temps, les variables liées aux questions "Hostile", "Upset", "Ashamed", "Nervous", "Afraid" se regroupent ensemble, ce qui indique quelles sont corrélées. Tandis que les variables "Alert", "Inspired", "Determined", "Active", "Attentive" se regroupent ensemble ce qui indique quelles sont corrélées. De plus ces deux groupes de variables sont orthogonaux, dont il semble y avoir indépendance entre ces deux groupes de questions.
+
+## T1
+```{r out.width = '140%'}
+mat <- data %>% 
+  dplyr::select(starts_with("PANAS1"), FL_11_DO)
+names(mat) <- c("Upset", "Hostile", "Alert", "Ashamed", "Inspired", "Nervous", "Determined", "Attentive", "Afraid", "Active", "Group")
+res.pca <- PCA(mat[,-11], scale.unit = TRUE, graph = FALSE)
+fig1 <- fviz_pca_var(res.pca, col.var = "black")
+fig1
+```
+
+## T2
+```{r out.width = '140%'}
+mat <- data %>% 
+  dplyr::select(starts_with("PANAS2"), FL_11_DO)
+names(mat) <- c("Upset", "Hostile", "Alert", "Ashamed", "Inspired", "Nervous", "Determined", "Attentive", "Afraid", "Active", "Group")
+res.pca <- PCA(mat[,-11], scale.unit = TRUE, graph = FALSE)
+fig1 <- fviz_pca_var(res.pca, col.var = "black")
+fig1
+```
+
+## T3
+```{r out.width = '140%'}
+mat <- data %>% 
+  dplyr::select(starts_with("PANAS3"))
+names(mat) <- c("Upset", "Hostile", "Alert", "Ashamed", "Inspired", "Nervous", "Determined", "Attentive", "Afraid", "Active")
+res.pca <- PCA(mat, scale.unit = TRUE, graph = FALSE)
+fig1 <- fviz_pca_var(res.pca, col.var = "black")
+fig1
+```
+
+## T4
+```{r out.width = '140%'}
+mat <- data %>% 
+  dplyr::select(starts_with("PANAS4"))
+names(mat) <- c("Upset", "Hostile", "Alert", "Ashamed", "Inspired", "Nervous", "Determined", "Attentive", "Afraid", "Active")
+res.pca <- PCA(mat, scale.unit = TRUE, graph = FALSE)
+fig1 <- fviz_pca_var(res.pca, col.var = "black")
+fig1
+```
+
+## T5
+```{r out.width = '140%'}
+mat <- data %>% 
+  dplyr::select(starts_with("PANAS5"))
+names(mat) <- c("Upset", "Hostile", "Alert", "Ashamed", "Inspired", "Nervous", "Determined", "Attentive", "Afraid", "Active")
+res.pca <- PCA(mat, scale.unit = TRUE, graph = FALSE)
+fig1 <- fviz_pca_var(res.pca, col.var = "black")
+fig1
+```
+
+# AFM : Analyse factorielle multiple
+```{r, fig.show='hide'}
+mat <- data %>% 
+  dplyr::select(starts_with("PANAS")) %>% 
+  dplyr::select(matches("_1$"), matches("_2$"), matches("_3$"), matches("_4$"), matches("_5$"),
+                matches("_6$"), matches("_7$"), matches("_8$"), matches("_9$"), matches("_10$"))
+
+MFA(mat, group = c(5, 5, 5, 5, 5, 5, 5, 5, 5, 5), type = rep("c", 10),
+    name.group = c("Upset", "Hostile", "Alert", "Ashamed", "Inspired", "Nervous", "Determined", "Attentive", "Afraid", "Active"))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
